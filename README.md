@@ -1,7 +1,7 @@
 # python-pgp_passtool: OpenPGP Passphrase Tool
 
 This is a library and a CLI tool for manipulating the passphrase and secret
-key encryption of a RFC4880 OpenPGP Transferable Private Key.
+key encryption of a RFC4880 OpenPGP Transferable Secret Key.
 
 
 ## Dependencies
