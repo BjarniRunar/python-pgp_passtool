@@ -18,6 +18,7 @@ setup(
     license = 'BSD',
     description = 'OpenPGP Passphrase Tool (and library)',
     url = 'https://github.com/BjarniRunar/python-pgp_passtool',
+    download_url = 'https://github.com/BjarniRunar/python-pgp_passtool/archive/v0.0.1.tar.gz',
     keywords = 'pgp gpg rfc2440 rfc4880 crypto cryptography',
     install_requires = ['pgpdump', 'cryptography'],
     classifiers = classifiers,
