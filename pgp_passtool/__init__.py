@@ -1,3 +1,32 @@
+"""\
+pgp_passtool - Change an OpenPGP Transferable Secret Key's passphrase
+
+Usage examples:
+    python -m pgp_passtool [--fast] /path/to/key.pgp [/path/to/new-key.pgp]
+    (echo oldpw; echo; cat key.pgp) |python -m pgp_passtool - |gpg --list-packets
+
+This tool will read one or two passphrases from standard input (old and new),
+and then use that to re-encrypt the secret key material. The new key material
+is sent to stdout if no output file is specifed.
+
+If only one passphrase is provided, the output will be an unprotected key.
+
+If the input filename is a single dash (-), read the input key material from
+standard input after both passphrases have been read. If the flag --fast is
+present, we will assume the new passphrase already has high entropy and use
+fast (potentially less secure) key derivation.
+
+If the passphrase has non-ASCII characters in it and was not encoded as
+UTF-8, you can set the PGPASSWD_CHARSET environment variable to something
+like 'latin-1' to allow things to decrypt. The variable is ignored when
+encrypting secret keys, then passphrases are always encoded UTF-8.
+
+The tool will noisily crash on inputs it cannot handle, or if the passphrase
+is incorrect. It won't overwrite/create the output file in such cases.
+
+NOTE: This implementation is incomplete and only handles the common, modern
+      schemes for encrypting secret key material. YMMV. :-)
+"""
 import base64
 import hashlib
 import os
@@ -8,8 +37,10 @@ from pgpdump.utils import get_mpi, get_int2
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
+__author__ = 'Bjarni R. Einarsson <bre@mailpile.is>'
+__version__ = '0.0.1'
 
-decoding_charset = os.getenv('PGPASSWD_CHARSET') or 'utf-8'
+
 get_random_bytes = os.urandom
 
 
@@ -165,7 +196,7 @@ class MutableSecretKeyPacket(pgpdump.packet.SecretKeyPacket):
         self.parse()
 
 
-def _unlock_secret_key(packet, passphrase):
+def _unlock_secret_key(packet, passphrase, decoding_charset):
     if packet.s2k_id == 0:
         return packet
     if packet.s2k_id not in (254, 255):
@@ -283,12 +314,14 @@ def _pgp_header(_type, body_length):
             body_length % 256])
 
 
-def change_passphrase(keydata, old_passphrase, new_passphrase='', fast=False):
+def change_passphrase(
+        keydata, old_pass, new_pass='',
+        fast=False, decoding_charset='utf-8'):
     """
     Accepts a PGP key (armored or binary) and attempt to change the
     passphrase of any secret keys within.
 
-    If new_passphrase is false (blank or None), the output will be an
+    If new_pass is false (blank or None), the output will be an
     unprotected key. If fast is True, the new passphrase is assumed to
     already have high entropy and we use a minimal number of iterations
     when deriving the actual encryption key.
@@ -303,19 +336,19 @@ def change_passphrase(keydata, old_passphrase, new_passphrase='', fast=False):
 
     try:
         # Ensure correct encoding on Python 2
-        if not isinstance(old_passphrase, unicode):
-            old_passphrase = old_passphrase.decode('utf-8')
-        if not isinstance(new_passphrase, unicode):
-            new_passphrase = new_passphrase.decode('utf-8')
+        if not isinstance(old_pass, unicode):
+            old_pass = old_pass.decode('utf-8')
+        if not isinstance(new_pass, unicode):
+            new_pass = new_pass.decode('utf-8')
     except NameError:
         pass
 
     output = []
     for packet in packet_iter:
         if packet.raw in (5, 7):
-            packet = _unlock_secret_key(packet, old_passphrase)
-            if new_passphrase:
-                packet = _lock_secret_key(packet, new_passphrase, fast)
+            packet = _unlock_secret_key(packet, old_pass, decoding_charset)
+            if new_pass:
+                packet = _lock_secret_key(packet, new_pass, fast)
         if packet is not None:
             output.append(packet)
 
@@ -326,10 +359,48 @@ def change_passphrase(keydata, old_passphrase, new_passphrase='', fast=False):
     return newkey
 
 
+def main():
+    import os
+    import sys
+
+    decoding_charset = os.getenv('PGPASSWD_CHARSET') or 'utf-8'
+
+    if len(sys.argv) in (2, 3, 4):
+        fast = '--fast' in sys.argv
+        args = [a for a in sys.argv[1:] if a != '--fast'] 
+
+        if args[0] != '-':
+            old_key = open(args[0], 'rb').read()
+
+        from getpass import getpass
+        if not sys.stdin.isatty():
+            getpass = lambda p: sys.stdin.readline().split('\n')[0]
+        old_pass = getpass('Old passphrase: ')
+        new_pass = getpass('New passphrase: ')
+
+        if args[0] == '-':
+            old_key = sys.stdin.read()
+
+        new_key = change_passphrase(old_key, old_pass, new_pass,
+                fast=fast,
+                decoding_charset=decoding_charset)
+
+        # If we get this far, we have new key material!
+        out_fd = open(args[1], 'wb') if len(args) == 2 else sys.stdout
+        if hasattr(out_fd, 'buffer'):
+            out_fd = out_fd.buffer
+
+        out_fd.write(new_key)
+        out_fd.close()
+
+    else:
+        sys.stderr.write(__doc__)
+        sys.exit(1)
+
+
 _monkey_patch_pgpdump()
 
 if __name__ == "__main__":
-
     import doctest
     results = doctest.testmod(optionflags=doctest.ELLIPSIS)
     print('%s' % (results, ))
