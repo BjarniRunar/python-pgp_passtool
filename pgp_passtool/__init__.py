@@ -151,15 +151,6 @@ def s2k(string, hash_algo, cipher_algo, salt='', iter_code=None):
     else:
         octet_count = len(data)
 
-    if False:
-        sys.stderr.write('%s\n' % {
-            'salt': salt,
-            'iter_code': iter_code,
-            'octet_count': octet_count,
-            'contexts_needed': contexts_needed,
-            'bits_needed': bits_needed,
-            'hash_bits': hash_bits})
-
     hcount = int(octet_count / len(data))
     hleft = octet_count - (hcount * len(data))
     key = b''
@@ -246,13 +237,6 @@ def _unlock_secret_key(packet, passphrase, decoding_charset):
         dcs = get_int2(decrypted_data[-2:], 0)
 
     if ccs != dcs:
-        sys.stderr.write(
-            's2k_id=%s s2k_offset=%d s2k_algo=%s s2k_salt=%s s2k_count=%s\n'
-             % (packet.s2k_id, s2k_offset, s2k_calg,
-                base64.b64encode(s2k_salt), s2k_count))
-        sys.stderr.write('iv=%s encrypted=%s\n'
-             % (base64.b64encode(packet.s2k_iv),
-                base64.b64encode(encrypted_data)))
         raise ValueError('Bad passphrase, failed to decrypt.')
 
     new_packet.set_secret_key_data(0, secret_data) 
