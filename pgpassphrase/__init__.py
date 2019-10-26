@@ -1,45 +1,16 @@
-#!/usr/bin/python
-"""\
-pgpassphrase - Change passphrases on an OpenPGP Transferable Secret Key.
-
-Usage examples:
-    pgpassphrase [--fast] /path/to/key.pgp [/path/to/new-key.pgp]
-    (echo oldpw; echo newpw; cat key.pgp) | pgpassphrase - |gpg --list-packets
-
-This tool will read one or two passphrases from standard input (old and new),
-and then use that to re-encrypt the secret key material. The new key material
-is sent to stdout if no output file is specifed.
-
-If only one passphrase is provided, the output will be an unprotected key.
-
-If the input filename is a single dash (-), read the input key material from
-standard input after both passphrases have been read. If the flag --fast is
-present, we will assume the new passphrase already has high entropy and use
-fast (potentially less secure) key derivation.
-
-If the passphrase has non-ASCII characters in it and was not encoded as
-UTF-8, you can set the PGPASSWD_CHARSET environment variable to something
-like 'latin-1' to allow things to decrypt. The variable is ignored when
-encrypting secret keys, then passphrases are always encoded UTF-8.
-
-The tool will noisily crash on inputs it cannot handle, or if the passphrase
-is incorrect. It won't overwrite/create the output file in such cases.
-
-NOTE: This implementation is incomplete and only handles the common, modern
-      schemes for encrypting secret key material. YMMV. :-)
-"""
 import base64
 import hashlib
 import os
 import pgpdump
 import sys
+
 from pgpdump.utils import get_mpi, get_int2
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 
-get_random_bytes = os.urandom
 decoding_charset = os.getenv('PGPASSWD_CHARSET') or 'utf-8'
+get_random_bytes = os.urandom
 
 
 def UNUSED_get_random_bytes(count):
@@ -47,8 +18,14 @@ def UNUSED_get_random_bytes(count):
 
 
 def _monkey_patch_pgpdump():
+    """
+    Monkey-patch pgpdump to handle ECC keys. This tries to patch things
+    in a backwards compatible way, so if our underlying pgpdump grows
+    support for these things, this just becomes a no-op.
+    """
     # Add Algorithm 22 to the lookup table
-    pgpdump.packet.AlgoLookup.pub_algorithms[22] = 'EdDSA'
+    if 22 not in pgpdump.packet.AlgoLookup.pub_algorithms:
+        pgpdump.packet.AlgoLookup.pub_algorithms[22] = 'EdDSA'
 
     # Handle elliptic-curve public keys
     orig_pkm = pgpdump.packet.PublicKeyPacket.parse_key_material
@@ -349,42 +326,12 @@ def change_passphrase(keydata, old_passphrase, new_passphrase='', fast=False):
     return newkey
 
 
+_monkey_patch_pgpdump()
+
 if __name__ == "__main__":
-    _monkey_patch_pgpdump()
 
-    if '--runtests' in sys.argv:
-        import doctest
-        results = doctest.testmod(optionflags=doctest.ELLIPSIS)
-        print('%s' % (results, ))
-        if results.failed:
-            sys.exit(1)
-
-    elif len(sys.argv) in (2, 3, 4):
-        fast = '--fast' in sys.argv
-        args = [a for a in sys.argv[1:] if a != '--fast'] 
-
-        if args[0] != '-':
-            old_key = open(args[0], 'rb').read()
-
-        from getpass import getpass
-        if not sys.stdin.isatty():
-            getpass = lambda p: sys.stdin.readline().split('\n')[0]
-        old_pass = getpass('Old passphrase: ')
-        new_pass = getpass('New passphrase: ')
-
-        if args[0] == '-':
-            old_key = sys.stdin.read()
-
-        new_key = change_passphrase(old_key, old_pass, new_pass, fast)
-
-        # If we get this far, we have new key material!
-        out_fd = open(args[1], 'wb') if len(args) == 2 else sys.stdout
-        if hasattr(out_fd, 'buffer'):
-            out_fd = out_fd.buffer
-
-        out_fd.write(new_key)
-        out_fd.close()
-
-    else:
-        sys.stderr.write(__doc__)
+    import doctest
+    results = doctest.testmod(optionflags=doctest.ELLIPSIS)
+    print('%s' % (results, ))
+    if results.failed:
         sys.exit(1)
