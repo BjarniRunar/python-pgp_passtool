@@ -38,7 +38,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 __author__ = 'Bjarni R. Einarsson <bre@mailpile.is>'
-__version__ = '0.0.1'
+__version__ = '0.0.2'
 
 
 get_random_bytes = os.urandom
